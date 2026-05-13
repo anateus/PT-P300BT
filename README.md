@@ -113,6 +113,22 @@ Optional arguments:
                         End margin (in dots).
   -r, --raw             Send the image to printer as-is without any pre-processing.
   -C, --nocomp          Disable compression.
+  -v, --verbose         Print serial diagnostics and verbose printer status.
+  --status-only         Only query and print printer status; do not send image data
+                        or print.
+  --serial-timeout SERIAL_TIMEOUT
+                        Seconds to wait for printer responses. Use 0 to wait
+                        forever. (default: 10)
+  --macos-rfcomm        On macOS, bypass /dev/cu.* and talk directly to the
+                        printer RFCOMM channel.
+  --rfcomm-channel RFCOMM_CHANNEL
+                        RFCOMM channel to use with --macos-rfcomm. PT-P300BT
+                        Serial Port Profile is usually channel 1.
+  --print-status-frames PRINT_STATUS_FRAMES
+                        Maximum number of status frames to read after sending the
+                        print command. (default: 20)
+  --cleanup-reset       Send a printer reset during cleanup after a successful job.
+                        Disabled by default on macOS Bluetooth serial.
   --fill-color FILL     Fill color for the text (e.g., "white"; default = "black").
   --stroke-fill STROKE_FILL
                         Stroke Fill color for the text (e.g., "black"; default = None).
@@ -250,6 +266,42 @@ Connect the printer via [Ubuntu Bluetooth panel](https://help.ubuntu.com/stable/
 To read the MAC address: `hcitool scan`. Setup /dev/rfcomm0.
 
 Usage: `python3 printlabel.py /dev/rfcomm0 FONT_NAME TEXT_TO_PRINT`
+
+## Bluetooth printer connection on macOS
+
+Pair the printer in macOS Bluetooth settings first. The system may create a serial device such as `/dev/cu.PT-P300BT2347`, but for this printer that `/dev/cu.*` path can be unreliable after the first print. On macOS, prefer the direct RFCOMM transport:
+
+```bash
+uv run python3 printlabel.py \
+  --macos-rfcomm \
+  /dev/cu.PT-P300BT2347 \
+  /path/to/font.otf \
+  "Test label"
+```
+
+`COM_PORT` is still required with `--macos-rfcomm`, but the script uses it only to infer the paired Bluetooth device name. For example, `/dev/cu.PT-P300BT2347` maps to the paired device `PT-P300BT2347`. If the `/dev/cu.*` device is not currently present, you can still pass the same remembered path as long as the printer is paired.
+
+Useful macOS flags:
+
+- `--macos-rfcomm`: bypasses the macOS `/dev/cu.*` serial driver and opens the printer's Bluetooth RFCOMM channel directly through PyObjC.
+- `--rfcomm-channel 1`: selects the RFCOMM channel. The PT-P300BT Serial Port Profile normally uses channel 1, which is the default.
+- `--status-only`: queries and prints printer status without sending label image data.
+- `--verbose`: prints serial/RFCOMM reads and writes plus verbose printer status frames.
+- `--serial-timeout 5`: changes how long to wait for printer responses. Use `0` to wait forever.
+- `--print-status-frames 20`: changes how many status frames to wait for after sending the print command.
+
+Example status check:
+
+```bash
+uv run python3 printlabel.py \
+  --status-only \
+  --verbose \
+  --macos-rfcomm \
+  --serial-timeout 5 \
+  /dev/cu.PT-P300BT2347
+```
+
+The macOS RFCOMM transport requires `pyobjc-framework-IOBluetooth`, which is included in `pyproject.toml` for macOS installs.
 
 ## Creating an executable asset for the GUI
 

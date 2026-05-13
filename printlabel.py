@@ -7,7 +7,12 @@ from serial.tools import list_ports
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pdf2image import convert_from_path
 
-from labelmaker import do_print_job, reset_printer
+from labelmaker import (
+    DEFAULT_RFCOMM_CHANNEL,
+    DEFAULT_SERIAL_TIMEOUT,
+    PrinterCommunicationError,
+    run_print_job,
+)
     
 
 def set_args():
@@ -134,6 +139,44 @@ def set_args():
         '-C', '--nocomp',
         help='Disable compression.',
         action='store_true'
+    )
+    p.add_argument(
+        '-v', '--verbose',
+        help='Print serial diagnostics and verbose printer status.',
+        action='store_true'
+    )
+    p.add_argument(
+        '--status-only',
+        help='Only query and print printer status; do not send image data or print.',
+        action='store_true',
+    )
+    p.add_argument(
+        '--serial-timeout',
+        help='Seconds to wait for printer responses. Use 0 to wait forever. (default: 10)',
+        default=DEFAULT_SERIAL_TIMEOUT,
+        type=float,
+    )
+    p.add_argument(
+        '--macos-rfcomm',
+        help='On macOS, bypass /dev/cu.* and talk directly to the printer RFCOMM channel.',
+        action='store_true',
+    )
+    p.add_argument(
+        '--rfcomm-channel',
+        help='RFCOMM channel to use with --macos-rfcomm. PT-P300BT Serial Port Profile is usually channel 1.',
+        default=DEFAULT_RFCOMM_CHANNEL,
+        type=int,
+    )
+    p.add_argument(
+        '--print-status-frames',
+        help='Maximum number of status frames to read after sending the print command. (default: 20)',
+        default=20,
+        type=int,
+    )
+    p.add_argument(
+        '--cleanup-reset',
+        help='Send a printer reset during cleanup after a successful job. Disabled by default on macOS Bluetooth serial.',
+        action='store_true',
     )
     p.add_argument(
         '--fill-color',
@@ -346,10 +389,16 @@ def draw_multiline_text(
 def main():
     p = set_args()
     args = p.parse_args()
-    if args.comport not in [p.device for p in list_ports.comports()]:
+    if (
+        not args.macos_rfcomm
+        and args.comport not in [p.device for p in list_ports.comports()]
+        and not os.path.exists(args.comport)
+    ):
         print("Port '" + args.comport + "' does not seem a valid serial communication port.")        
     data = None
-    if args.image is None: # not using the legacy mode
+    if args.status_only:
+        data = b''
+    elif args.image is None: # not using the legacy mode
         height_of_the_printable_area = 64  # px: number of vertical pixels of the PT-P300BT printer (9 mm)
         height_of_the_tape = 86  # 64 px / 9 mm * 12 mm (the borders over the printable area will not be printed)
         height_of_the_image = 88  # px (can be any value >= height_of_the_tape, but height_of_the_tape + 2 border lines is good)
@@ -762,7 +811,13 @@ def main():
 
     # Similar to main() in labelmaker.py
     try:
-        ser = serial.Serial(args.comport)
+        sys.stdout.flush()
+        assert data is not None
+        run_print_job(args, data)
+    except PrinterCommunicationError as e:
+        sys.stdout.flush()
+        print(f'{p.prog}: error: {e}', file=sys.stderr)
+        sys.exit(1)
     except serial.SerialException:
         p.error(
             'Printer on Bluetooth serial port "'
@@ -771,13 +826,6 @@ def main():
         )
     except Exception as e:
         p.error(e)
-
-    try:
-        assert data is not None
-        do_print_job(ser, args, data)
-    finally:
-        # Initialize
-        reset_printer(ser)
 
 if __name__ == "__main__":
     main()

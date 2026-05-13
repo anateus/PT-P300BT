@@ -1,0 +1,11 @@
+[project]
+name = "pt-p300bt"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "packbits>=0.6",
+    "pdf2image>=1.17.0",
+    "pillow>=12.2.0",
+    "pyobjc-framework-iobluetooth>=12.1 ; sys_platform == 'darwin'",
+    "pyserial>=3.5",
+]
